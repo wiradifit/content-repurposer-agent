@@ -1,12 +1,19 @@
 from typing import Dict, List, Optional
 import datetime
-from google.cloud import firestore
+import uuid
+from google.cloud import firestore, storage
+from google import genai
+from google.genai import types as genai_types
+from google.adk.tools import ToolContext
 import httpx
 from bs4 import BeautifulSoup
 
 # Hardcode project ID to avoid deployment auth issues on Agent Runtime
 PROJECT_ID = "qwiklabs-gcp-03-e5805c52e198"
+BUCKET_NAME = "content-repurposer-assets-08l43n"
+
 db = firestore.Client(project=PROJECT_ID)
+storage_client = storage.Client(project=PROJECT_ID)
 
 COLLECTION_NAME = "content_drafts"
 
@@ -153,3 +160,72 @@ def find_word_synonyms(word: str) -> str:
         
     except Exception as e:
         return f"Failed to look up word '{word}'. Error: {str(e)}"
+
+
+async def generate_marketing_image(
+    prompt: str,
+    aspect_ratio: str = "1:1",
+    tool_context: Optional[ToolContext] = None,
+) -> str:
+    """Generates an image for a marketing post or social media draft using gemini-3.1-flash-lite-image in the global region.
+    Saves the image into the session artifacts and uploads it directly to the public Cloud Storage bucket, returning the public HTTPS URL.
+
+    Args:
+        prompt: Detailed visual prompt describing the desired image/graphic (e.g., 'Modern minimalist 3D graphic showing AI analyzing social media trends').
+        aspect_ratio: Aspect ratio for the image, such as '1:1', '16:9', '4:3', '9:16'. Defaults to '1:1'.
+        tool_context: ADK ToolContext automatically injected by the runtime.
+
+    Returns:
+        The public HTTPS URL of the uploaded image on Cloud Storage, or an error message.
+    """
+    try:
+        # Use Vertex AI with global location as required
+        client = genai.Client(vertexai=True, project=PROJECT_ID, location="global")
+        response = client.models.generate_content(
+            model="gemini-3.1-flash-lite-image",
+            contents=prompt,
+            config=genai_types.GenerateContentConfig(
+                response_modalities=["TEXT", "IMAGE"],
+                image_config=genai_types.ImageConfig(
+                    aspect_ratio=aspect_ratio,
+                    image_size="1K",
+                ),
+            ),
+        )
+
+        image_bytes = None
+        mime_type = "image/jpeg"
+        if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+            for part in response.candidates[0].content.parts:
+                if part.inline_data:
+                    image_bytes = part.inline_data.data
+                    if part.inline_data.mime_type:
+                        mime_type = part.inline_data.mime_type
+                    break
+
+        if not image_bytes:
+            return "Failed to generate image: No image data returned from model."
+
+        ext = "png" if "png" in mime_type else "jpg"
+        unique_name = f"marketing_img_{uuid.uuid4().hex[:10]}.{ext}"
+
+        # 1. Save with tool_context.save_artifact if tool_context is provided
+        if tool_context:
+            artifact_part = genai_types.Part(
+                inline_data=genai_types.Blob(
+                    mime_type=mime_type,
+                    data=image_bytes,
+                )
+            )
+            await tool_context.save_artifact(filename=unique_name, artifact=artifact_part)
+
+        # 2. Upload in-memory image bytes to public Cloud Storage bucket
+        bucket = storage_client.bucket(BUCKET_NAME)
+        blob = bucket.blob(unique_name)
+        blob.upload_from_string(image_bytes, content_type=mime_type)
+
+        public_url = f"https://storage.googleapis.com/{BUCKET_NAME}/{unique_name}"
+        return public_url
+
+    except Exception as e:
+        return f"Error generating or uploading image: {str(e)}"

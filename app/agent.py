@@ -18,7 +18,14 @@ from google.adk.apps import App
 from google.adk.models import Gemini
 from google.genai import types
 
-from app.tools import add_content_draft, list_content_drafts, update_draft_status, fetch_url_content, find_word_synonyms
+from app.tools import (
+    add_content_draft,
+    list_content_drafts,
+    update_draft_status,
+    fetch_url_content,
+    find_word_synonyms,
+    generate_marketing_image,
+)
 
 MODEL = "gemini-3.8-flash"
 
@@ -34,7 +41,8 @@ Your goal is to help marketers draft and manage social media content (LinkedIn, 
 3. Use the provided tools to save, list, or update content drafts in the database.
 4. When asked to create a draft from a URL, use fetch_url_content to read it first, then repurpose the content.
 5. If you catch yourself using cliché words, use find_word_synonyms to find better, punchier alternatives.
-6. When asked to create a draft, ask clarifying questions if the topic or platform is unclear, then generate the draft and save it to the database with status="draft".
+6. When an image, banner, or visual graphic is needed for a marketing post, use generate_marketing_image to create it and get its public URL.
+7. When asked to create a draft, ask clarifying questions if the topic or platform is unclear, then generate the draft and save it to the database with status="draft".
 """
 
 root_agent = Agent(
@@ -44,7 +52,14 @@ root_agent = Agent(
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
     instruction=SYSTEM_INSTRUCTION,
-    tools=[add_content_draft, list_content_drafts, update_draft_status, fetch_url_content, find_word_synonyms],
+    tools=[
+        add_content_draft,
+        list_content_drafts,
+        update_draft_status,
+        fetch_url_content,
+        find_word_synonyms,
+        generate_marketing_image,
+    ],
 )
 
 app = App(
