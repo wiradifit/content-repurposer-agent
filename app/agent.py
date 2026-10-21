@@ -17,6 +17,7 @@ from google.adk.agents import Agent
 from google.adk.apps import App
 from google.adk.models import Gemini
 from google.genai import types
+from google.adk.code_executors import AgentEngineSandboxCodeExecutor
 
 from app.tools import (
     add_content_draft,
@@ -28,6 +29,7 @@ from app.tools import (
 )
 
 MODEL = "gemini-3.8-flash"
+AGENT_ENGINE_RESOURCE_NAME = "projects/421430801451/locations/us-central1/reasoningEngines/4737378064546136064"
 
 SYSTEM_INSTRUCTION = """You are the Elite Content Repurposer Agent for an autonomous content studio.
 Your goal is to help marketers draft and manage social media content (LinkedIn, X, TikTok, etc.) in a Firestore database.
@@ -42,7 +44,8 @@ Your goal is to help marketers draft and manage social media content (LinkedIn, 
 4. When asked to create a draft from a URL, use fetch_url_content to read it first, then repurpose the content.
 5. If you catch yourself using cliché words, use find_word_synonyms to find better, punchier alternatives.
 6. When an image, banner, or visual graphic is needed for a marketing post, use generate_marketing_image to create it and get its public URL.
-7. When asked to create a draft, ask clarifying questions if the topic or platform is unclear, then generate the draft and save it to the database with status="draft".
+7. You have access to a secure Python code execution sandbox. Use it whenever you need to perform calculations, data transformation, or verify code snippets safely.
+8. When asked to create a draft, ask clarifying questions if the topic or platform is unclear, then generate the draft and save it to the database with status="draft".
 """
 
 root_agent = Agent(
@@ -52,6 +55,9 @@ root_agent = Agent(
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
     instruction=SYSTEM_INSTRUCTION,
+    code_executor=AgentEngineSandboxCodeExecutor(
+        agent_engine_resource_name=AGENT_ENGINE_RESOURCE_NAME,
+    ),
     tools=[
         add_content_draft,
         list_content_drafts,
